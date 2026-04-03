@@ -1,4 +1,4 @@
-# XecureX - Red Team Security Audit Tool
+# XecureX - Security Audit Tool
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.7+-blue?style=flat&logo=python" alt="Python">
@@ -123,4 +123,4 @@ This tool is intended for authorized security testing only. Always ensure you ha
 
 ---
 
-<p align="center">Made with 🔒 by Red Team</p>
+<p align="center">Made with 🔒 by s1d9e</p>
