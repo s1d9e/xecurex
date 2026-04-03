@@ -1,0 +1,10 @@
+# Core dependencies
+pathlib2>=2.3.0
+colorama>=0.4.4
+
+# Testing
+pytest>=7.0.0
+pytest-cov>=3.0.0
+
+# Optional: for enhanced reporting
+jinja2>=3.0.0
