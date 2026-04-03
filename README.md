@@ -23,7 +23,7 @@ XecureX is a powerful open-source security audit tool designed for red team oper
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/xecurex.git
+git clone https://github.com/s1d9e/xecurex.git
 cd xecurex
 
 # Install dependencies
