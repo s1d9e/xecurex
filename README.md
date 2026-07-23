@@ -1,126 +1,207 @@
-# XecureX - Security Audit Tool
+# XecureX
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Python-3.7+-blue?style=flat&logo=python" alt="Python">
-  <img src="https://img.shields.io/badge/License-MIT-green?style=flat" alt="License">
-  <img src="https://img.shields.io/badge/Version-1.0.0-orange?style=flat" alt="Version">
-</p>
+Open-source security audit tool for source code. Detects hardcoded secrets, SQL injection, XSS, command injection, and more.
 
-XecureX is a powerful open-source security audit tool designed for red team operations. It analyzes repositories to detect common security vulnerabilities and helps developers secure their code before deployment.
+[![Python](https://img.shields.io/badge/Python-3.10+-blue?style=flat&logo=python&logoColor=white)](https://www.python.org)
+[![License](https://img.shields.io/badge/License-MIT-green?style=flat)](LICENSE)
+[![CI](https://img.shields.io/badge/CI-Passing-brightgreen?style=flat)](https://github.com/s1d9e/xecurex/actions)
 
 ## Features
 
-- **Hardcoded Credentials** - Detects passwords, API keys, secrets, tokens hardcoded in source code
-- **SQL Injection** - Identifies string concatenation in SQL queries that could lead to injection attacks
-- **Command Injection** - Finds dangerous system calls (os.system, eval, shell=True, subprocess)
-- **Path Traversal** - Detects dynamic file paths that could be exploited
-- **XSS Vulnerabilities** - Identifies unsafe DOM manipulation (innerHTML, document.write)
-- **Weak Cryptography** - Finds usage of weak hash algorithms (MD5, SHA1)
-- **Insecure Deserialization** - Detects unsafe deserialization patterns (pickle, yaml.load)
-- **Sensitive Data Exposure** - Finds secrets logged to console or printed
+- **Hardcoded Credentials** — passwords, API keys, tokens, AWS credentials
+- **SQL Injection** — string concatenation, f-string queries
+- **Command Injection** — `os.system()`, `eval()`, `subprocess(shell=True)`
+- **XSS** — `innerHTML`, `document.write()`, `dangerouslySetInnerHTML`
+- **Weak Cryptography** — MD5, SHA-1 usage
+- **Insecure Deserialization** — `pickle`, `yaml.load()`, `marshal`
+- **Path Traversal** — dynamic file paths, `../` patterns
+- **Sensitive Data Exposure** — secrets logged to console
+- **Hardcoded IPs/URLs** — insecure HTTP, hardcoded addresses
+
+## Detection Engine
+
+| Language | Method | Precision |
+|----------|--------|-----------|
+| Python | AST parsing + Regex | High |
+| JavaScript/TypeScript | Regex (improved) | Medium |
+| Java, Go, PHP, Ruby, C#, Shell, SQL | Regex (improved) | Medium |
 
 ## Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/s1d9e/xecurex.git
 cd xecurex
-
-# Install dependencies
-pip install -r requirements.txt
+pip install -e ".[dev]"
 ```
 
-## Quick Start
+## Usage
 
 ```bash
 # Basic scan
-python src/main.py /path/to/repository
+xecurex /path/to/repo
 
 # JSON output
-python src/main.py /path/to/repository --format json
+xecurex /path/to/repo --format json --output report.json
 
-# Save results to file
-python src/main.py /path/to/repository -o results.json
+# Only HIGH severity
+xecurex /path/to/repo --min-severity high
 
-# Exclude additional directories
-python src/main.py /path/to/repository --exclude test_data cache
+# Exclude directories
+xecurex /path/to/repo --exclude tests/ docs/
+
+# Verbose mode
+xecurex /path/to/repo --verbose
+
+# Disable AST (regex only)
+xecurex /path/to/repo --no-ast
 ```
 
-## Supported Languages
+## CLI Options
 
-| Language | Extensions |
-|----------|------------|
-| Python | .py |
-| JavaScript/TypeScript | .js, .ts, .jsx, .tsx |
-| Java | .java |
-| PHP | .php |
-| Ruby | .rb |
-| Go | .go |
-| Shell | .sh |
-| C# | .cs |
-| SQL | .sql |
+```
+xecurex [-h] [--format {text,json}] [-o OUTPUT]
+        [--min-severity {low,medium,high}] [--exclude [EXCLUDE ...]]
+        [--no-ast] [--no-config] [--min-confidence MIN_CONFIDENCE]
+        [-v] [--version]
+        path
+```
 
-## Severity Levels
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--format` | Output format (`text` or `json`) | `text` |
+| `-o, --output` | Save results to file | stdout |
+| `--min-severity` | Minimum severity to report | `low` |
+| `--exclude` | Additional directories to exclude | — |
+| `--no-ast` | Disable Python AST analysis | AST enabled |
+| `--min-confidence` | Minimum confidence threshold (0.0–1.0) | `0.3` |
+| `-v, --verbose` | Show scan progress | off |
 
-| Severity | Color | Categories |
-|----------|-------|------------|
-| HIGH | 🔴 | Hardcoded Credentials, Command Injection, SQL Injection, Insecure Deserialization |
-| MEDIUM | 🟡 | XSS Vulnerabilities, Path Traversal, Weak Crypto |
-| LOW | 🟢 | Sensitive Data Exposure, Hardcoded IP/URL |
+## Configuration
 
-## Example Output
+Create a `xecurex.toml` at the root of your repository:
+
+```toml
+[xecurex]
+exclude_dirs = ["test_data", "fixtures"]
+min_severity = "medium"
+use_ast = true
+confidence_threshold = 0.5
+max_file_size = 500000
+```
+
+Or add to `pyproject.toml`:
+
+```toml
+[tool.xecurex]
+exclude_dirs = ["test_data", "fixtures"]
+min_severity = "medium"
+```
+
+## Output Example
 
 ```
 ======================================================================
                     SECURITY AUDIT REPORT
 ======================================================================
 
-📊 Statistics:
-   Files scanned: 42
-   Lines scanned: 1583
+  Files scanned:  42
+  Lines scanned:  1583
+  Scan duration:  0.12s
 
-[!] Found 5 potential security issues:
+  Found 5 potential security issues:
+    HIGH: 2  MEDIUM: 2  LOW: 1
 
-🔴 HIGH Severity (2)
---------------------------------------------------
-  📁 src/auth.py:15
-     [Hardcoded Credentials] Hardcoded password detected
+  !!! HIGH Severity (2)
+  --------------------------------------------------
+    src/auth.py:15
+      [CRED-001] Hardcoded password detected
+      Confidence: [#########.]. (90%)
+      Code: password = "supersecret123"
 
-  📁 src/database.py:42
-     [SQL Injection] SQL query with string concatenation
+  !  MEDIUM Severity (2)
+  --------------------------------------------------
+    frontend/app.js:23
+      [XSS-001] Dangerous innerHTML assignment — XSS risk
+      Confidence: [########..]. (80%)
+      Code: .innerHTML = userInput
 
-🟡 MEDIUM Severity (2)
---------------------------------------------------
-  📁 frontend/app.js:23
-     [XSS Vulnerabilities] Dangerous innerHTML assignment
-
-  📁 utils/crypto.py:8
-     [Weak Crypto] MD5 hash usage - weak cryptographic
-
-🟢 LOW Severity (1)
---------------------------------------------------
-  📁 src/config.py:5
-     [Hardcoded IP/URL] Hardcoded IP address
+  i  LOW Severity (1)
+  --------------------------------------------------
+    src/config.py:5
+      [HARDCODE-001] Insecure HTTP URL (should use HTTPS)
+      Confidence: [######....]. (60%)
+      Code: http://api.example.com/v1/users
 ```
 
-## Testing
+## Development
 
 ```bash
-# Run tests
-python -m pytest tests/ -v
+# Install dev dependencies
+make install
 
-# Run with coverage
-python -m pytest tests/ --cov=src --cov-report=html
+# Run tests
+make test
+
+# Run linter
+make lint
+
+# Format code
+make format
+
+# Scan the project itself
+make scan
+```
+
+## Docker
+
+```bash
+docker build -t xecurex .
+docker run --rm -v /path/to/repo:/repo xecurex /repo
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | No security issues found |
+| `1` | Security issues detected |
+| `2` | Execution error |
+
+## Project Structure
+
+```
+src/xecurex/
+├── __init__.py           # Version info
+├── __main__.py           # python -m xecurex
+├── cli.py                # CLI entry point
+├── scanner.py            # Scan orchestration
+├── reporter.py           # Text + JSON reports
+├── models.py             # Dataclasses (Finding, ScanResult)
+├── config.py             # Configuration management
+├── rules/                # Security rules (modular)
+│   ├── base.py           # Abstract Rule class
+│   ├── credentials.py    # Hardcoded secrets
+│   ├── injection.py      # SQLi, command injection
+│   ├── xss.py            # Cross-site scripting
+│   ├── crypto.py         # Weak cryptography
+│   ├── deserialization.py # Unsafe deserialization
+│   ├── path_traversal.py # Directory traversal
+│   ├── data_exposure.py  # Sensitive data logging
+│   ├── hardcoded.py      # IPs, URLs
+│   └── dependencies.py   # Insecure libraries
+└── analyzers/            # Code analysis engines
+    ├── generic_analyzer.py   # Regex-based (all languages)
+    └── python_analyzer.py    # AST-based (Python)
 ```
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License — see [LICENSE](LICENSE)
 
 ## Disclaimer
 
-This tool is intended for authorized security testing only. Always ensure you have explicit permission before scanning any repository that you do not own. The authors assume no liability for any damages caused by misuse of this tool.
+This tool is intended for authorized security testing only. Always ensure you have explicit permission before scanning any code you do not own.
 
 ---
 
-<p align="center">Made with 🔒 by s1d9e</p>
+Made by s1d9e

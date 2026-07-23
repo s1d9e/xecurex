@@ -40,11 +40,12 @@ htmlcov/
 .tox/
 
 # Output
-*.json
-!package.json
 reports/
 results/
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Ruff
+.ruff_cache/
