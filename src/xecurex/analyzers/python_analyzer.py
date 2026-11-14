@@ -5,8 +5,9 @@ from __future__ import annotations
 import ast
 import re
 
+from xecurex.analyzers.generic_analyzer import strip_comments
 from xecurex.models import Finding, Severity
-from xecurex.rules.base import Rule
+from xecurex.rules.base import Rule, is_placeholder
 
 # Dangerous function calls mapped to (category, severity, description, rule_id)
 _DANGEROUS_CALLS = {
@@ -130,11 +131,6 @@ _SENSITIVE_VAR_NAMES = re.compile(
     re.IGNORECASE,
 )
 
-_CREDENTIAL_ASSIGNMENT = re.compile(
-    r"""(?:password|passwd|pwd|api[_-]?key|secret|token|auth[_-]?token|access[_-]?key)\s*=\s*(["'])(?:(?!\1).){8,}\1""",
-    re.IGNORECASE,
-)
-
 
 class PythonAnalyzer:
     """AST-based analyzer for Python files with regex fallback."""
@@ -144,16 +140,55 @@ class PythonAnalyzer:
 
     def analyze(self, content: str, filepath: str) -> list[Finding]:
         findings: list[Finding] = []
+        tree: ast.Module | None = None
 
         try:
             tree = ast.parse(content)
             findings.extend(self._check_ast(tree, filepath, content))
-        except SyntaxError:
+        except (SyntaxError, ValueError):
+            # Invalid syntax or null bytes: fall back to regex only.
             pass
 
-        findings.extend(self._check_regex_fallback(content, filepath))
+        regex_findings = self._check_regex_fallback(content, filepath)
+
+        if tree is not None:
+            # Ignore regex matches that start inside a string literal: they
+            # are data (log messages, templates), not executable code.
+            spans = self._string_spans(tree)
+            regex_findings = [f for f in regex_findings if not self._starts_inside_string(f, spans)]
+
+        # The AST already reported these exact locations: drop the regex
+        # duplicates (same file, line, column and category).
+        ast_keys = {(f.line, f.column, f.category) for f in findings}
+        findings.extend(f for f in regex_findings if (f.line, f.column, f.category) not in ast_keys)
 
         return findings
+
+    @staticmethod
+    def _string_spans(tree: ast.Module) -> list[tuple[int, int, int, int]]:
+        """Return (start_line, start_col, end_line, end_col) of string nodes."""
+        spans: list[tuple[int, int, int, int]] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.JoinedStr) or (
+                isinstance(node, ast.Constant) and isinstance(node.value, str)
+            ):
+                spans.append(
+                    (
+                        node.lineno,
+                        node.col_offset,
+                        node.end_lineno or node.lineno,
+                        node.end_col_offset or node.col_offset,
+                    )
+                )
+        return spans
+
+    @staticmethod
+    def _starts_inside_string(f: Finding, spans: list[tuple[int, int, int, int]]) -> bool:
+        pos = (f.line, f.column)
+        return any(
+            (start_line, start_col) < pos < (end_line, end_col)
+            for start_line, start_col, end_line, end_col in spans
+        )
 
     def _check_ast(self, tree: ast.Module, filepath: str, content: str) -> list[Finding]:
         findings: list[Finding] = []
@@ -290,7 +325,7 @@ class PythonAnalyzer:
                 and isinstance(node.value.value, str)
             ):
                 value = node.value.value
-                if len(value) >= 8 and not value.startswith(("{", "<", "os.", "env")):
+                if len(value) >= 8 and not is_placeholder(value):
                     findings.append(
                         Finding(
                             file=filepath,
@@ -308,10 +343,13 @@ class PythonAnalyzer:
 
     def _check_regex_fallback(self, content: str, filepath: str) -> list[Finding]:
         findings: list[Finding] = []
+        # Strip comments/docstrings first so their content never produces
+        # findings (line numbers are preserved by strip_comments).
+        stripped = strip_comments(content, filepath)
         for rule in self.regex_rules:
             if rule.language is not None and rule.language != "python":
                 continue
-            findings.extend(rule.check(content, filepath))
+            findings.extend(rule.check(stripped, filepath))
         return findings
 
     @staticmethod

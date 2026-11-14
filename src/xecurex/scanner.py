@@ -91,13 +91,18 @@ class Scanner:
 
     @staticmethod
     def _deduplicate(findings: list[Finding]) -> list[Finding]:
-        seen: set[tuple[str, int, str]] = set()
-        result: list[Finding] = []
+        """Merge findings pointing at the same code location.
+
+        Same file + line + column + category means the same issue reported
+        by different rules (typically the AST analyzer and its regex
+        fallback): keep the most confident one.
+        """
+        best: dict[tuple[str, int, int, str], Finding] = {}
 
         for f in findings:
-            key = (f.file, f.line, f.rule_id)
-            if key not in seen:
-                seen.add(key)
-                result.append(f)
+            key = (f.file, f.line, f.column, f.category)
+            current = best.get(key)
+            if current is None or f.confidence > current.confidence:
+                best[key] = f
 
-        return result
+        return list(best.values())

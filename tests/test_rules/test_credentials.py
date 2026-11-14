@@ -59,3 +59,44 @@ class TestCredentialRules:
         code = "password = get_password_from_vault()"
         findings = self.rule.check(code, "test.py")
         assert len(findings) == 0
+
+    def test_ignores_commented_code_with_leading_code(self):
+        code = 'x = 1  # password = "supersecret123"'
+        findings = self.rule.check(code, "test.py")
+        assert len(findings) == 0
+
+    def test_ignores_placeholder_your_password(self):
+        code = 'password = "your_password"'
+        findings = self.rule.check(code, "test.py")
+        assert len(findings) == 0
+
+    def test_ignores_placeholder_env_syntax(self):
+        code = 'password = "${DB_PASSWORD}"'
+        findings = self.rule.check(code, "test.py")
+        assert len(findings) == 0
+
+    def test_ignores_placeholder_generic(self):
+        code = 'password = "placeholder"'
+        findings = self.rule.check(code, "test.py")
+        assert len(findings) == 0
+
+    def test_ignores_placeholder_angle_brackets(self):
+        code = 'api_key = "<YOUR_API_KEY_HERE>"'
+        findings = self.rule.check(code, "test.py")
+        assert not any(f.description == "Hardcoded API key detected" for f in findings)
+
+    def test_ignores_placeholder_changeme(self):
+        code = 'password = "changeme"'
+        findings = self.rule.check(code, "test.py")
+        assert len(findings) == 0
+
+    def test_detects_real_looking_password(self):
+        code = 'password = "S3cr3t!vAlue99"'
+        findings = self.rule.check(code, "test.py")
+        assert len(findings) >= 1
+
+    def test_rule_ids_are_unique(self):
+        code = 'password = "supersecret123"'
+        findings = self.rule.check(code, "test.py")
+        rule_ids = [f.rule_id for f in findings]
+        assert len(rule_ids) == len(set(rule_ids))

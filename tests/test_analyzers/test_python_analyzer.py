@@ -69,3 +69,44 @@ class TestPythonAnalyzer:
         code = "def broken(\n    this is not valid python"
         findings = analyzer.analyze(code, "test.py")
         assert isinstance(findings, list)
+
+    def test_handles_null_bytes(self, analyzer):
+        code = 'password = "secret123456"\x00'
+        findings = analyzer.analyze(code, "test.py")
+        assert isinstance(findings, list)
+
+    def test_no_duplicate_ast_and_regex_findings(self, analyzer):
+        code = 'import os\nos.system("ls")'
+        findings = analyzer.analyze(code, "test.py")
+        line2 = [f for f in findings if f.line == 2]
+        assert len(line2) == 1
+        assert "AST" in line2[0].rule_id
+
+    def test_ignores_placeholder_assignment(self, analyzer):
+        code = 'password = "your_password"'
+        findings = analyzer.analyze(code, "test.py")
+        assert not any(f.category == "Hardcoded Credentials" for f in findings)
+
+    def test_ignores_credential_text_inside_string(self, analyzer):
+        code = "msg = 'password = \"abcdef123456\"'"
+        findings = analyzer.analyze(code, "test.py")
+        assert not any(f.category == "Hardcoded Credentials" for f in findings)
+
+    def test_ignores_docstring_content(self, analyzer):
+        code = 'def f():\n    """\n    password = "secret123456"\n    """\n    return 1'
+        findings = analyzer.analyze(code, "test.py")
+        assert not any(f.category == "Hardcoded Credentials" for f in findings)
+
+    def test_line_numbers_survive_comment_stripping(self, analyzer):
+        code = '# comment\n# comment\npassword = "supersecret123"'
+        findings = analyzer.analyze(code, "test.py")
+        cred = [f for f in findings if f.category == "Hardcoded Credentials"]
+        assert cred
+        assert all(f.line == 3 for f in cred)
+
+    def test_eval_and_exec_both_reported(self, analyzer):
+        code = "eval(x); exec(y)"
+        findings = analyzer.analyze(code, "test.py")
+        descriptions = " ".join(f.description for f in findings)
+        assert "eval()" in descriptions
+        assert "exec()" in descriptions

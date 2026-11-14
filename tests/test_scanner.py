@@ -97,3 +97,34 @@ class TestScanner:
 
         scanner.scan(temp_repo, callback=callback)
         assert len(calls) > 0
+
+    def test_no_duplicate_ast_and_regex_findings(self, scanner, temp_repo):
+        (temp_repo / "app.py").write_text('import os\nos.system("ls")')
+        result = scanner.scan(temp_repo)
+        line2 = [f for f in result.findings if f.file == "app.py" and f.line == 2]
+        assert len(line2) == 1
+        assert "INJECT" in line2[0].rule_id
+
+    def test_does_not_exclude_similarly_named_dirs(self, scanner, temp_repo):
+        d = temp_repo / "mybuild"
+        d.mkdir()
+        (d / "app.js").write_text('password = "secret123456"')
+        (temp_repo / "app.js").write_text("var x = 1")
+        result = scanner.scan(temp_repo)
+        assert any("mybuild" in f.file for f in result.findings)
+
+    def test_does_not_exclude_github_dir(self, scanner, temp_repo):
+        gh = temp_repo / ".github"
+        gh.mkdir()
+        (gh / "check.js").write_text('password = "secret123456"')
+        result = scanner.scan(temp_repo)
+        assert any(".github" in f.file for f in result.findings)
+
+    def test_rule_ids_unique_per_line(self, scanner, temp_repo):
+        (temp_repo / "app.py").write_text('import os\nos.system("ls")\npassword = "secret123456"')
+        result = scanner.scan(temp_repo)
+        by_line: dict[int, list[str]] = {}
+        for f in result.findings:
+            by_line.setdefault(f.line, []).append(f.rule_id)
+        for line, rule_ids in by_line.items():
+            assert len(rule_ids) == len(set(rule_ids)), f"duplicate rule_id on line {line}"
