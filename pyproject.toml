@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xecurex"
-version = "2.0.0"
+version = "2.1.0"
 description = "Open-source security audit tool. Detects hardcoded secrets, SQLi, XSS, command injection in code."
 readme = "README.md"
 license = {text = "MIT"}

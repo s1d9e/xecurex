@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import contextlib
+import fnmatch
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -62,7 +64,25 @@ class Config:
     max_file_size: int = 1_000_000  # 1MB
 
     def should_exclude(self, path_str: str) -> bool:
-        return any(excluded in path_str for excluded in self.exclude_dirs)
+        """Return True when the path matches an exclusion pattern.
+
+        Patterns match individual path components (fnmatch globs such as
+        ``*.egg-info``), full relative paths, or path prefixes. A pattern
+        never matches by bare substring, so ``build`` does not exclude
+        ``mybuild/`` and ``.git`` does not exclude ``.github/``.
+        """
+        parts = Path(path_str).parts
+        for excluded in self.exclude_dirs:
+            pattern = excluded.rstrip("/")
+            if not pattern:
+                continue
+            if any(fnmatch.fnmatch(part, pattern) for part in parts):
+                return True
+            if path_str == pattern or path_str.startswith(pattern + "/"):
+                return True
+            if fnmatch.fnmatch(path_str, pattern):
+                return True
+        return False
 
     def should_include(self, suffix: str) -> bool:
         return suffix in self.include_extensions
@@ -72,23 +92,64 @@ class Config:
 
 
 def load_config(repo_path: Path) -> Config:
+    """Load configuration from ``xecurex.toml`` or ``pyproject.toml``.
+
+    The first file that contains an xecurex section wins. A file without
+    such section (or an invalid TOML file) does not stop the search.
+    """
     config = Config()
 
     for name in ("xecurex.toml", "pyproject.toml"):
         config_path = repo_path / name
-        if config_path.exists():
-            try:
-                with open(config_path, "rb") as f:
-                    data = tomllib.load(f)
-                xec = data.get("tool", {}).get("xecurex", {})
-                if not xec:
-                    xec = data.get("xecurex", {})
-                _apply_config(config, xec)
-                break
-            except Exception:
-                pass
+        if not config_path.exists():
+            continue
+        try:
+            with open(config_path, "rb") as f:
+                data = tomllib.load(f)
+        except tomllib.TOMLDecodeError as exc:
+            print(f"xecurex: invalid TOML in {config_path}: {exc}", file=sys.stderr)
+            continue
+        except OSError as exc:
+            print(f"xecurex: cannot read {config_path}: {exc}", file=sys.stderr)
+            continue
+
+        xec = data.get("tool", {}).get("xecurex", {})
+        if not xec:
+            xec = data.get("xecurex", {})
+        if not xec:
+            continue
+
+        _apply_config(config, xec)
+        break
+
+    _load_ignore_file(repo_path, config)
 
     return config
+
+
+def _load_ignore_file(repo_path: Path, config: Config) -> None:
+    """Load ``.xecurexignore`` patterns (one per line, ``#`` for comments).
+
+    Patterns use the same syntax as ``exclude_dirs``: fnmatch globs matched
+    against path components or path prefixes (``tests``, ``*.min.js``,
+    ``src/generated``).
+    """
+    ignore_path = repo_path / ".xecurexignore"
+    if not ignore_path.is_file():
+        return
+    try:
+        lines = ignore_path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        print(f"xecurex: cannot read {ignore_path}: {exc}", file=sys.stderr)
+        return
+
+    for line in lines:
+        # Normalize gitignore-style patterns: strip whitespace and slashes.
+        pattern = line.strip().strip("/")
+        if not pattern or pattern.startswith("#"):
+            continue
+        if pattern not in config.exclude_dirs:
+            config.exclude_dirs.append(pattern)
 
 
 def _apply_config(config: Config, data: dict[str, Any]) -> None:
