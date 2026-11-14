@@ -35,6 +35,8 @@ Each finding includes a unique `rule_id`, severity level, and confidence score.
 - References to environment variables (`os.environ["..."]`)
 - Short strings (< 8 chars)
 - Code in comments
+- Placeholder values: `your_password`, `changeme`, `${API_KEY}`,
+  `<YOUR_KEY_HERE>`, `password`, `test`, `123456`, …
 
 ---
 
@@ -51,9 +53,10 @@ Each finding includes a unique `rule_id`, severity level, and confidence score.
 | `INJECT-007` | `eval()` usage | HIGH | 85% |
 | `INJECT-008` | `exec()` usage | HIGH | 80% |
 | `INJECT-009` | `os.popen()` call | HIGH | 85% |
-| `INJECT-010` | `new Function()` (JS) | HIGH | 85% |
-| `INJECT-011` | `setTimeout` with string (JS) | MEDIUM | 70% |
-| `INJECT-012` | `setInterval` with string (JS) | MEDIUM | 70% |
+| `INJECT-010` | `commands.getoutput()` (Python 2) | HIGH | 90% |
+| `INJECT-011` | `new Function()` (JS) | HIGH | 85% |
+| `INJECT-012` | `setTimeout` with string (JS) | MEDIUM | 70% |
+| `INJECT-013` | `setInterval` with string (JS) | MEDIUM | 70% |
 
 **What it catches:**
 - `os.system("ls")`
@@ -81,6 +84,9 @@ Each finding includes a unique `rule_id`, severity level, and confidence score.
 - `document.write(untrusted)`
 - `<div dangerouslySetInnerHTML={{__html: data}} />`
 
+**Note:** `XSS-007`/`XSS-008` require a jQuery-style receiver
+(`$(...)` or `jQuery(...)`) so Python `list.append()` calls are not flagged.
+
 ---
 
 ## CRYPTO — Weak Cryptography
@@ -91,9 +97,10 @@ Each finding includes a unique `rule_id`, severity level, and confidence score.
 | `CRYPTO-002` | SHA-1 hash usage | MEDIUM | 90% |
 | `CRYPTO-003` | Weak hash via `hashlib.new()` | MEDIUM | 90% |
 | `CRYPTO-004` | Weak symmetric cipher (DES, Blowfish, RC4) | MEDIUM | 85% |
-| `CRYPTO-005` | `.md5()` digest usage | MEDIUM | 80% |
-| `CRYPTO-006` | `.sha1()` digest usage | MEDIUM | 80% |
-| `CRYPTO-007` | `Math.random()` (not crypto-safe) | LOW | 60% |
+| `CRYPTO-005` | Standalone `md5()`/`sha1()` call | MEDIUM | 60% |
+| `CRYPTO-006` | `.md5()` digest usage | MEDIUM | 80% |
+| `CRYPTO-007` | `.sha1()` digest usage | MEDIUM | 80% |
+| `CRYPTO-008` | `Math.random()` (not crypto-safe) | LOW | 60% |
 
 **What it catches:**
 - `hashlib.md5(data)`
@@ -157,7 +164,10 @@ Each finding includes a unique `rule_id`, severity level, and confidence score.
 | `HARDCODE-001` | Hardcoded IP address | LOW | 50% |
 | `HARDCODE-002` | Insecure HTTP URL | LOW | 60% |
 
-**Filters:** Private IPs (10.x, 192.168.x, 127.x) and version-like strings (1.0.0.1) are excluded.
+**Filters:** Private IPs (10.x, 192.168.x, 127.x, 172.16-31.x), broadcast
+addresses, IPs embedded in URLs (`http://8.8.8.8/…`), and version strings on
+lines that mention `version`/`release`/`v1.2` are excluded. Example hosts
+(`example.com`, `localhost`, …) are not reported as insecure URLs.
 
 ---
 
@@ -166,10 +176,11 @@ Each finding includes a unique `rule_id`, severity level, and confidence score.
 | Rule ID | Description | Severity | Confidence |
 |---------|-------------|----------|------------|
 | `DEP-001` | Node.js `crypto` module | LOW | 40% |
-| `DEP-002` | JWT library usage | LOW | 50% |
-| `DEP-003` | `eval` npm package | MEDIUM | 80% |
-| `DEP-004` | `telnetlib` (unencrypted) | MEDIUM | 80% |
-| `DEP-005` | `telnetlib` import | MEDIUM | 80% |
+| `DEP-002` | JWT library usage (`import jwt`) | LOW | 50% |
+| `DEP-003` | JWT library import (`from jwt import ...`) | LOW | 50% |
+| `DEP-004` | `eval` npm package | MEDIUM | 80% |
+| `DEP-005` | `telnetlib` usage (unencrypted) | MEDIUM | 80% |
+| `DEP-006` | `telnetlib` import | MEDIUM | 80% |
 
 ---
 
@@ -191,3 +202,7 @@ Python files are analyzed with the native `ast` module in addition to regex. The
 | `CRYPTO-AST-002` | `hashlib.sha1` via AST | MEDIUM | 90% |
 | `CRED-AST-001` | Hardcoded credential assignment via AST | HIGH | 85% |
 | `DEP-AST-010` | Dangerous import via AST | MEDIUM | 70% |
+
+When the AST analyzer and the regex fallback both report the same code
+location (same file, line, column and category), only the most confident
+finding is kept — no duplicate reports.
